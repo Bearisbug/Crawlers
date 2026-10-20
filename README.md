@@ -1,8 +1,4 @@
-![xiaohongshu](https://img.shields.io/badge/Redbook-white?style=social&logo=xiaohongshu&logoColor=red&labelColor=%23FF2442)
-
-# Crawlers
-
-## 健康传播账号：抖音、小红书作品与评论抓取，评论 KAP 标注（2026）
+# Crawlers：健康传播账号的抖音、小红书作品与评论抓取，评论 KAP 标注
 
 研究对象是问卷中医疗机构和医生个人填报的抖音号、小红书号。抓取范围是 2025-07-01 至 2026-06-30 发布的作品（笔记）及其一级评论，所有接口原始响应都按 gzip JSONL 保存。整理好的数据写进一个 SQLite，再用 Claude Sonnet 5.5 给每条评论打 KAP 分：
 
@@ -21,6 +17,26 @@
 
 原始数据和问卷不在仓库里。评论含用户昵称、ID、IP 属地，问卷含医生姓名，都属于个人信息。
 
+## 流程总览
+
+```mermaid
+flowchart LR
+  Q["问卷账号清单 inputs/"] --> DR["dy_resolve.py 抖音号→sec_uid"]
+  DR --> DC["dy_crawl.py 主页与作品"]
+  DC --> DM["dy_comments_self.py 一级评论"]
+  Q --> XR["xhs_resolve.mjs 小红书号→user_id"]
+  XR --> XL["xhs_list.mjs 笔记列表"]
+  XL --> XD["xhs_detail.mjs 详情与一级评论"]
+  DC --> DB["build_db.py crawl.sqlite"]
+  DM --> DB
+  XD --> DB
+  DB --> K["kap_label.py 评论 KAP 标注，导出 CSV"]
+  C["login_capture.py / export_edge_cookies.py 账号 cookie"] -.-> DR
+  C -.-> XR
+  V["verify_session.py 风控时弹窗过验证"] -.-> DM
+  V -.-> XD
+```
+
 ## 目录
 
 | 路径 | 作用 |
@@ -33,13 +49,12 @@
 | `scripts/dy_crawl.py` | 抓抖音主页和时间范围内的全部作品 |
 | `scripts/dy_comments_self.py`、`scripts/dy_rows.py` | 抓抖音一级评论，每条作品最多 500 条，多个号轮流 |
 | `scripts/xhs_resolve.mjs` | 把小红书号换成 user_id |
-| `scripts/xhs_crawl.mjs` | 抓小红书主页和笔记列表（`--list-only`） |
+| `scripts/xhs_list.mjs` | 抓小红书主页和 `--since` 之后的笔记列表 |
 | `scripts/xhs_detail.mjs` | 逐篇打开小红书笔记页取详情，再翻一级评论（每篇最多 `--max-comments` 条），多个号轮流 |
 | `scripts/env.sh` | 服务器上补 PATH，并导出 redbook 需要的 cookie 环境变量 |
 | `scripts/build_db.py` | 把抓取结果和问卷对应关系建成 `outputs/crawl.sqlite` |
 | `scripts/kap_label.py`、`run_kap.sh` | 评论 KAP 批量标注（Claude Agent SDK，走 Claude 订阅），结果写回 SQLite 并导出 CSV |
 | `prompts/kap_codebook.md` | KAP 编码手册，也就是标注用的系统提示词 |
-| `xhs.py`、`js/xhs/` | 早先的小红书签名算法代码，与本期流程无关 |
 
 ## 环境
 
@@ -95,7 +110,7 @@ DY_COOKIE_FILE=... python scripts/dy_comments_self.py --out-dir outputs/dy_full 
 ```bash
 source scripts/env.sh          # 用 XHS_ACCOUNT_FILE 指定用哪个号的 cookie
 RAW_FILE=outputs/xhs_full/raw/search_user.jsonl.gz node scripts/xhs_resolve.mjs $(cat inputs/xhs_ids.txt) > outputs/xhs_full/resolved.jsonl
-node scripts/xhs_crawl.mjs --accounts outputs/xhs_full/resolved.jsonl --out-dir outputs/xhs_full --since 2025-07-01 --list-only --raw-dir outputs/xhs_full/raw
+node scripts/xhs_list.mjs --accounts outputs/xhs_full/resolved.jsonl --out-dir outputs/xhs_full --since 2025-07-01 --raw-dir outputs/xhs_full/raw
 node scripts/xhs_detail.mjs --list outputs/xhs_full/notes_list.jsonl --out-dir outputs/xhs_full \
   --from 2025-07-01 --to 2026-06-30 --max-comments 100 --gap 15
 ```

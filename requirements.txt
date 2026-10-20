@@ -1,0 +1,3 @@
+claude-agent-sdk
+playwright
+cryptography
